@@ -91,4 +91,22 @@ CREATE TABLE IF NOT EXISTS approvals (
   comment TEXT,
   decided_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- v2: specialists' notebook (Shani/Yael/Maya keep records here)
+CREATE TABLE IF NOT EXISTS records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent TEXT NOT NULL,                       -- which agent owns it
+  category TEXT NOT NULL,                    -- vendor | event | comm | etc.
+  title TEXT NOT NULL,
+  body TEXT,
+  data TEXT,                                 -- JSON for typed fields
+  due_date TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_records_agent ON records(agent);
+CREATE INDEX IF NOT EXISTS idx_records_category ON records(category);
+CREATE INDEX IF NOT EXISTS idx_records_due_date ON records(due_date);
 `;
