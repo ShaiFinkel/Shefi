@@ -109,4 +109,49 @@ CREATE TABLE IF NOT EXISTS records (
 CREATE INDEX IF NOT EXISTS idx_records_agent ON records(agent);
 CREATE INDEX IF NOT EXISTS idx_records_category ON records(category);
 CREATE INDEX IF NOT EXISTS idx_records_due_date ON records(due_date);
+
+-- v2.1: Employees roster (synced from Excel + maintained via Telegram)
+CREATE TABLE IF NOT EXISTS employees (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  name_he TEXT,                              -- Hebrew name if known (helps NL matching)
+  country TEXT,                              -- Israel | USA | Australia | ...
+  type TEXT,                                 -- Employee | Contractor | Employee - Hourly
+  email TEXT,
+  phone TEXT,
+  birthday_md TEXT,                          -- MM-DD (the part that matters for recurring)
+  birthday_full TEXT,                        -- YYYY-MM-DD original (for age, etc.)
+  amount_ils INTEGER NOT NULL DEFAULT 300,
+  channel TEXT NOT NULL DEFAULT 'buyme'      -- buyme | amazon_au | amazon_us | amazon_ca | manual
+    CHECK (channel IN ('buyme','amazon_au','amazon_us','amazon_ca','manual')),
+  notes TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  departed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_name ON employees(name);
+CREATE INDEX IF NOT EXISTS idx_employees_active ON employees(active);
+CREATE INDEX IF NOT EXISTS idx_employees_birthday ON employees(birthday_md);
+
+-- v2.1: Monthly birthday gift orders (one row per employee per month)
+CREATE TABLE IF NOT EXISTS birthday_orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  month TEXT NOT NULL,                       -- YYYY-MM (the month we're ordering for)
+  send_date TEXT NOT NULL,                   -- YYYY-MM-DD (calendar-year birthday date)
+  channel TEXT NOT NULL,                     -- buyme | amazon_au | amazon_us | amazon_ca | manual
+  amount_ils INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending','approved','sent','skipped','failed')),
+  approved_at TEXT,
+  sent_at TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (employee_id, month)
+);
+
+CREATE INDEX IF NOT EXISTS idx_birthday_orders_month ON birthday_orders(month);
+CREATE INDEX IF NOT EXISTS idx_birthday_orders_status ON birthday_orders(status);
 `;

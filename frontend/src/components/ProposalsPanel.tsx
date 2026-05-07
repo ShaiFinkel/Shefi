@@ -12,14 +12,14 @@ export function ProposalsPanel({ proposals, refresh }: Props) {
   const history = proposals.filter((p) => p.status !== "ready").slice(0, 10);
 
   return (
-    <aside className="w-96 bg-panel border-r border-panel2 flex flex-col">
-      <div className="px-5 py-3 border-b border-panel2">
-        <div className="font-semibold">ממתינים לאישור</div>
-        <div className="text-xs text-ink2">
-          {pending.length} דיפים מהצוות
-        </div>
+    <div className="flex-1 overflow-y-auto bg-bg">
+      <div className="max-w-4xl mx-auto px-6 py-6 space-y-3">
+      <div className="mb-4">
+        <h1 className="text-2xl font-bold">🛠 פיתוח — ממתינים לאישור</h1>
+        <p className="text-xs text-ink2 mt-1">
+          {pending.length} דיפים מהצוות (נועם · דניאל · קוסם)
+        </p>
       </div>
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {pending.length === 0 && (
           <div className="text-center text-ink2 text-sm py-8">
             אין דיפים שמחכים. כשדניאל יסיים פיתוח — זה יופיע כאן.
@@ -55,7 +55,7 @@ export function ProposalsPanel({ proposals, refresh }: Props) {
           </>
         )}
       </div>
-    </aside>
+    </div>
   );
 }
 

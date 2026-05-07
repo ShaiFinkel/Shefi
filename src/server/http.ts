@@ -16,6 +16,7 @@ import {
 } from "../dev/proposals.js";
 import { mergeProposalBranch } from "../dev/git.js";
 import { runFromCEO } from "../agents/runner.js";
+import { registerDashboardRoutes } from "./api-dashboard.js";
 
 const FRONTEND_DIST = resolve(process.cwd(), "frontend/dist");
 
@@ -24,6 +25,8 @@ export async function startServer(port = 3000) {
 
   await app.register(cors, { origin: true });
   await app.register(websocket);
+
+  await registerDashboardRoutes(app);
 
   // ===== REST =====
   app.get("/api/health", async () => ({ ok: true }));

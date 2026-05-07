@@ -1,4 +1,13 @@
-import type { AgentEvent, AgentInfo, DevTask, Proposal } from "./types";
+import type {
+  AgentEvent,
+  AgentInfo,
+  BirthdayMonthData,
+  DashboardSummary,
+  DevTask,
+  Employee,
+  Proposal,
+  TaskItem,
+} from "./types";
 
 const BASE = "";
 
@@ -33,6 +42,50 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ message, target }),
     }),
+
+  // Dashboard
+  summary: () => json<DashboardSummary>("/api/dashboard/summary"),
+  openTasks: () => json<TaskItem[]>("/api/tasks/open"),
+
+  // Employees
+  employees: (q?: string) =>
+    json<Employee[]>(`/api/employees${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  employeesAll: () => json<Employee[]>("/api/employees/all"),
+  createEmployee: (data: Partial<Employee>) =>
+    json<Employee>("/api/employees", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateEmployee: (id: number, data: Partial<Employee>) =>
+    json<Employee>(`/api/employees/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  departEmployee: (id: number, departure_date?: string) =>
+    json<{ ok: boolean }>(`/api/employees/${id}/depart`, {
+      method: "POST",
+      body: JSON.stringify({ departure_date }),
+    }),
+  restoreEmployee: (id: number) =>
+    json<{ ok: boolean }>(`/api/employees/${id}/restore`, { method: "POST" }),
+
+  // Birthdays
+  birthdaysMonth: (month: string) =>
+    json<BirthdayMonthData>(`/api/birthdays/${month}`),
+  createOrders: (month: string) =>
+    json<{ created: number; skipped: number }>(
+      `/api/birthdays/${month}/create-orders`,
+      { method: "POST" },
+    ),
+  approveOrders: (month: string) =>
+    json<{ approved: number }>(`/api/birthdays/${month}/approve`, {
+      method: "POST",
+    }),
+  markSent: (month: string) =>
+    json<{ sent: number }>(`/api/birthdays/${month}/sent`, { method: "POST" }),
+  skipOrders: (month: string) =>
+    json<{ skipped: number }>(`/api/birthdays/${month}/skip`, { method: "POST" }),
+  csvUrl: (month: string) => `/api/birthdays/${month}/csv`,
 };
 
 export function connectWS(

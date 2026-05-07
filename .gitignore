@@ -8,4 +8,5 @@ frontend/dist/
 data/*.db
 data/*.db-*
 data/*.jsonl
+data/inputs/
 *.log

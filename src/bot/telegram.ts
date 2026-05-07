@@ -8,6 +8,10 @@ import {
   listItemsForToday,
   listOpenItems,
 } from "../db/client.js";
+import {
+  registerBirthdayCallbacks,
+  runMonthlyBirthdayPreview,
+} from "../scheduler/birthdays.js";
 
 export const bot = new Bot(env.TELEGRAM_BOT_TOKEN);
 
@@ -71,6 +75,22 @@ bot.command("open", async (ctx) => {
   });
   await ctx.reply(`פתוחות (${items.length}):\n` + lines.join("\n"));
 });
+
+bot.command("birthdays", async (ctx) => {
+  const arg = ctx.match.trim();
+  const month = /^\d{4}-\d{2}$/.test(arg)
+    ? arg
+    : new Date().toISOString().slice(0, 7);
+  await ctx.replyWithChatAction("typing");
+  try {
+    await runMonthlyBirthdayPreview(bot, month);
+  } catch (err) {
+    console.error("birthdays preview error:", err);
+    await ctx.reply("שגיאה ביצירת תצוגה מקדימה.");
+  }
+});
+
+registerBirthdayCallbacks(bot);
 
 bot.command("done", async (ctx) => {
   const arg = ctx.match.trim();

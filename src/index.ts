@@ -1,6 +1,7 @@
 import "./lib/env.js";
 import { bot } from "./bot/telegram.js";
 import { startScheduler } from "./scheduler/digests.js";
+import { startBirthdayScheduler } from "./scheduler/birthdays.js";
 import { startServer } from "./server/http.js";
 import { eventBus } from "./server/events.js";
 
@@ -8,6 +9,7 @@ async function main() {
   console.log("Shefi & Co. עולה לאוויר…");
 
   startScheduler(bot);
+  startBirthdayScheduler(bot);
 
   await startServer(3000);
 

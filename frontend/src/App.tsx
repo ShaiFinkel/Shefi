@@ -5,8 +5,13 @@ import { Sidebar } from "./components/Sidebar";
 import { Timeline } from "./components/Timeline";
 import { ProposalsPanel } from "./components/ProposalsPanel";
 import { ChatBar } from "./components/ChatBar";
+import { TopNav } from "./components/TopNav";
+import { HomePage, type View } from "./components/HomePage";
+import { BirthdaysPage } from "./components/BirthdaysPage";
+import { PeoplePage } from "./components/PeoplePage";
 
 export function App() {
+  const [view, setView] = useState<View>("home");
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -38,8 +43,11 @@ export function App() {
           if (ev.kind === "system" && ev.content.includes("ממתין לאישור")) {
             api.proposals().then(setProposals).catch(console.error);
           }
-          if (ev.agent === "Daniel" && ev.kind === "tool_result" &&
-              ev.content.startsWith("create_proposal")) {
+          if (
+            ev.agent === "Daniel" &&
+            ev.kind === "tool_result" &&
+            ev.content.startsWith("create_proposal")
+          ) {
             api.proposals().then(setProposals).catch(console.error);
           }
         },
@@ -83,58 +91,96 @@ export function App() {
 
   const pendingCount = proposals.filter((p) => p.status === "ready").length;
 
+  function chatWith(agent: string) {
+    if (["Noam", "Daniel", "Kosem", "Liya", "Uri", "Rotem"].includes(agent)) {
+      setFilterAgent(agent);
+      setView("timeline");
+      return;
+    }
+    setFilterAgent(agent);
+    setView("timeline");
+  }
+
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar
-        agents={agents}
-        events={events}
-        filterAgent={filterAgent}
-        setFilterAgent={setFilterAgent}
-        filterDivision={filterDivision}
-        setFilterDivision={setFilterDivision}
-        showProposals={showProposals}
-        setShowProposals={setShowProposals}
-        pendingCount={pendingCount}
+    <div className="flex flex-col h-screen overflow-hidden">
+      <TopNav
+        view={view}
+        onChange={(v) => {
+          setView(v);
+          if (v === "timeline") {
+            // keep filterAgent so chatWith can target a specific agent
+          } else {
+            setFilterAgent(null);
+            setFilterDivision(null);
+          }
+        }}
+        pendingProposals={pendingCount}
         wsState={wsState}
       />
-      <main className="flex-1 flex flex-col min-w-0">
-        <header className="flex items-center justify-between px-6 py-3 border-b border-panel2 bg-panel/40">
-          <div>
-            <h1 className="text-lg font-semibold">
-              {filterAgent
-                ? `שיחות של ${filterAgent}`
-                : filterDivision === "ops"
-                  ? "חטיבת תפעול"
-                  : filterDivision === "dev"
-                    ? "חטיבת פיתוח"
-                    : filterDivision === "knowledge"
-                      ? "ידע ותובנות"
-                      : "Timeline — כל הסוכנים"}
-            </h1>
-            <p className="text-xs text-ink2">
-              {filteredEvents.length} הודעות · {agents.length} סוכנים בצוות
-            </p>
-          </div>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="חיפוש בטיימליין…"
-            className="bg-panel border border-panel2 rounded-md px-3 py-1.5 text-sm w-72 focus:outline-none focus:border-accent"
-          />
-        </header>
-        <div className="flex-1 flex min-h-0">
-          <div className="flex-1 flex flex-col min-w-0">
-            <Timeline events={filteredEvents} agents={agents} />
-            <ChatBar agents={agents} />
-          </div>
-          {showProposals && (
-            <ProposalsPanel
-              proposals={proposals}
-              refresh={() => api.proposals().then(setProposals)}
+
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {view === "home" && (
+          <HomePage onOpenView={setView} onChatWith={chatWith} />
+        )}
+
+        {view === "birthdays" && <BirthdaysPage />}
+
+        {view === "people" && <PeoplePage />}
+
+        {view === "timeline" && (
+          <>
+            <Sidebar
+              agents={agents}
+              events={events}
+              filterAgent={filterAgent}
+              setFilterAgent={setFilterAgent}
+              filterDivision={filterDivision}
+              setFilterDivision={setFilterDivision}
+              showProposals={showProposals}
+              setShowProposals={setShowProposals}
+              pendingCount={pendingCount}
+              wsState={wsState}
             />
-          )}
-        </div>
-      </main>
+            <main className="flex-1 flex flex-col min-w-0">
+              <header className="flex items-center justify-between px-6 py-3 border-b border-panel2 bg-panel/40">
+                <div>
+                  <h1 className="text-lg font-semibold">
+                    {filterAgent
+                      ? `שיחות של ${filterAgent}`
+                      : filterDivision === "ops"
+                        ? "חטיבת תפעול"
+                        : filterDivision === "dev"
+                          ? "חטיבת פיתוח"
+                          : filterDivision === "knowledge"
+                            ? "ידע ותובנות"
+                            : "Timeline — כל הסוכנים"}
+                  </h1>
+                  <p className="text-xs text-ink2">
+                    {filteredEvents.length} הודעות · {agents.length} סוכנים בצוות
+                  </p>
+                </div>
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="חיפוש בטיימליין…"
+                  className="bg-panel border border-panel2 rounded-md px-3 py-1.5 text-sm w-72 focus:outline-none focus:border-accent"
+                />
+              </header>
+              <div className="flex-1 flex flex-col min-h-0">
+                <Timeline events={filteredEvents} agents={agents} />
+                <ChatBar agents={agents} />
+              </div>
+            </main>
+          </>
+        )}
+
+        {view === "proposals" && (
+          <ProposalsPanel
+            proposals={proposals}
+            refresh={() => api.proposals().then(setProposals)}
+          />
+        )}
+      </div>
     </div>
   );
 }

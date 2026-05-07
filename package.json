@@ -31,6 +31,7 @@
     "node-cron": "^4.2.1",
     "openai": "^6.36.0",
     "simple-git": "^3.36.0",
+    "xlsx": "^0.18.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
