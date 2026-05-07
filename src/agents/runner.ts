@@ -37,12 +37,13 @@ function createInstrumentedRunner(): Runner {
   });
 
   runner.on("agent_tool_start", (_ctx, agent, tool, details) => {
+    const call = details.toolCall as { arguments?: string };
     let args = "";
     try {
-      const parsed = JSON.parse(details.toolCall.arguments ?? "{}");
-      args = JSON.stringify(parsed);
+      const raw = call.arguments ?? "{}";
+      args = JSON.stringify(JSON.parse(raw));
     } catch {
-      args = details.toolCall.arguments ?? "";
+      args = call.arguments ?? "";
     }
     eventBus.emitEvent({
       agent: agent.name,

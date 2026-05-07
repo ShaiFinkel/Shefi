@@ -8,8 +8,9 @@ import {
   startWorkTool,
   writeFileTool,
 } from "./tools.js";
+import { kosem } from "./kosem.js";
 
-export const daniel = new Agent({
+export const daniel = Agent.create({
   name: "Daniel",
   model: env.OPENAI_MODEL_SMART,
   instructions: `אתה דניאל, ה־Developer של החברה.
@@ -36,4 +37,5 @@ export const daniel = new Agent({
     createProposalTool,
     cancelBranchTool,
   ],
+  handoffs: [kosem],
 });

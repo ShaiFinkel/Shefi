@@ -1,7 +1,7 @@
 import { Bot, GrammyError, HttpError } from "grammy";
-import { run, user } from "@openai/agents";
 import { env } from "../lib/env.js";
-import { shefi } from "../agents/shefi.js";
+import { runFromCEO } from "../agents/runner.js";
+import { eventBus } from "../server/events.js";
 import { transcribeTelegramVoice } from "./voice.js";
 import {
   closeItem,
@@ -92,10 +92,16 @@ bot.command("done", async (ctx) => {
 async function handleUserMessage(ctx: typeof bot extends Bot<infer C> ? C : never, text: string) {
   if (!text.trim()) return;
   await ctx.replyWithChatAction("typing");
+  eventBus.emitEvent({
+    agent: "CEO",
+    kind: "message",
+    content: text,
+    target_agent: "Shefi",
+    meta: { source: "telegram" },
+  });
   try {
-    const result = await run(shefi, [user(text)]);
-    const reply = result.finalOutput?.trim() || "✓";
-    await ctx.reply(reply);
+    const reply = await runFromCEO(text, "Shefi");
+    await ctx.reply(reply || "✓");
   } catch (err) {
     console.error("שגיאה בריצת הסוכן:", err);
     await ctx.reply("משהו השתבש. נסי שוב בעוד רגע.");

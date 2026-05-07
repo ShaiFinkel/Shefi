@@ -4,6 +4,7 @@
 **/node_modules/
 .DS_Store
 dist/
+frontend/dist/
 data/*.db
 data/*.db-*
 data/*.jsonl
