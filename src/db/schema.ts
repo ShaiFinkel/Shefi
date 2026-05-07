@@ -42,4 +42,53 @@ CREATE TABLE IF NOT EXISTS memories (
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_item ON memories(item_id);
+
+-- v2: Agent activity timeline (live dashboard feed)
+CREATE TABLE IF NOT EXISTS agent_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL DEFAULT (datetime('now')),
+  agent TEXT NOT NULL,
+  kind TEXT NOT NULL,                       -- message | tool_call | tool_result | handoff | system
+  content TEXT NOT NULL,
+  target_agent TEXT,
+  meta TEXT                                 -- JSON
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_events_ts ON agent_events(ts);
+CREATE INDEX IF NOT EXISTS idx_agent_events_agent ON agent_events(agent);
+
+-- v2: Dev division backlog
+CREATE TABLE IF NOT EXISTS dev_tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  spec TEXT,
+  status TEXT NOT NULL DEFAULT 'spec' CHECK (status IN ('spec','in_progress','review','merged','rejected','cancelled')),
+  assignee TEXT,
+  created_by TEXT NOT NULL DEFAULT 'CEO',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_dev_tasks_status ON dev_tasks(status);
+
+-- v2: Code-change proposals (diffs awaiting CEO approval)
+CREATE TABLE IF NOT EXISTS proposals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  dev_task_id INTEGER REFERENCES dev_tasks(id) ON DELETE CASCADE,
+  branch TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  diff_text TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'ready' CHECK (status IN ('ready','approved','rejected','merged')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status);
+
+CREATE TABLE IF NOT EXISTS approvals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  proposal_id INTEGER NOT NULL REFERENCES proposals(id) ON DELETE CASCADE,
+  decision TEXT NOT NULL CHECK (decision IN ('approve','reject','comment')),
+  comment TEXT,
+  decided_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
