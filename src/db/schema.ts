@@ -125,6 +125,13 @@ CREATE TABLE IF NOT EXISTS employees (
   channel TEXT NOT NULL DEFAULT 'buyme'      -- buyme | amazon_au | amazon_us | amazon_ca | manual
     CHECK (channel IN ('buyme','amazon_au','amazon_us','amazon_ca','manual')),
   notes TEXT,
+  -- v2.2: org-chart fields (synced from Dragontail org chart)
+  position TEXT,
+  department TEXT,
+  org_chart_id TEXT,                         -- the original org-chart id (string)
+  manager_org_id TEXT,                       -- the org-chart id of the manager
+  level INTEGER,                             -- org-chart level (1=GM, 2=direct reports, etc.)
+  location TEXT,                             -- Tel Aviv / Haifa / Remote / New York / London / ...
   active INTEGER NOT NULL DEFAULT 1,
   departed_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),

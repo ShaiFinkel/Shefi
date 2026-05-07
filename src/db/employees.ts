@@ -27,6 +27,12 @@ export interface Employee {
   amount_ils: number;
   channel: Channel;
   notes: string | null;
+  position: string | null;
+  department: string | null;
+  org_chart_id: string | null;
+  manager_org_id: string | null;
+  level: number | null;
+  location: string | null;
   active: number;
   departed_at: string | null;
   created_at: string;

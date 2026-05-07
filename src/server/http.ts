@@ -152,7 +152,9 @@ export async function startServer(port = 3000) {
     );
   }
 
-  await app.listen({ port, host: "127.0.0.1" });
-  console.log(`✓ דשבורד פעיל ב־http://localhost:${port}`);
+  // Bind to 0.0.0.0 so Tailscale + LAN devices can reach the dashboard.
+  // (Tailscale traffic is wireguard-encrypted; only your tailnet sees this.)
+  await app.listen({ port, host: "0.0.0.0" });
+  console.log(`✓ דשבורד פעיל ב־http://localhost:${port} ובכל הרשת על פורט ${port}`);
   return app;
 }

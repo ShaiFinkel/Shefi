@@ -49,6 +49,22 @@ db.pragma("foreign_keys = ON");
 
 db.exec(schemaSql);
 
+// ---------- Migrations ----------
+// Adds columns to existing tables if they don't already exist (no-op on fresh installs).
+function ensureColumn(table: string, column: string, defSql: string): void {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${defSql}`);
+  }
+}
+
+ensureColumn("employees", "position", "TEXT");
+ensureColumn("employees", "department", "TEXT");
+ensureColumn("employees", "org_chart_id", "TEXT");
+ensureColumn("employees", "manager_org_id", "TEXT");
+ensureColumn("employees", "level", "INTEGER");
+ensureColumn("employees", "location", "TEXT");
+
 // ---------- Items ----------
 
 export interface CreateItemInput {

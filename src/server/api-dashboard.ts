@@ -102,7 +102,7 @@ export async function registerDashboardRoutes(app: FastifyInstance) {
     const existing = getEmployeeById(id);
     if (!existing) return reply.code(404).send({ error: "not found" });
     const body = req.body as Record<string, unknown>;
-    const allowed = ["name", "name_he", "country", "type", "email", "phone", "birthday_md", "birthday_full", "amount_ils", "channel", "notes"];
+    const allowed = ["name", "name_he", "country", "type", "email", "phone", "birthday_md", "birthday_full", "amount_ils", "channel", "notes", "position", "department", "manager_org_id", "level", "location"];
     const updates: string[] = [];
     const values: unknown[] = [];
     for (const k of allowed) {
