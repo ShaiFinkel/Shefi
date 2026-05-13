@@ -200,6 +200,7 @@ CREATE TABLE IF NOT EXISTS equipment_requests (
   received_at TEXT,
   delivery_to TEXT CHECK (delivery_to IN ('office','home') OR delivery_to IS NULL),
   delivery_address TEXT,                     -- required when delivery_to='home'
+  manager_employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,  -- assigned approver
   notes TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))

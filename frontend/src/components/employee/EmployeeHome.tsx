@@ -2,12 +2,19 @@ import { useEffect, useState } from "react";
 import { employeeApi, type EmployeeMe } from "../../employee-api";
 import type { EquipmentRequest } from "../../types";
 
+interface ManagerStatus {
+  is_manager: boolean;
+  reports_count: number;
+  pending_count: number;
+}
+
 interface Props {
   me: EmployeeMe;
+  mgr: ManagerStatus | null;
   onNav: (path: string) => void;
 }
 
-export function EmployeeHome({ me, onNav }: Props) {
+export function EmployeeHome({ me, mgr, onNav }: Props) {
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [recent, setRecent] = useState<EquipmentRequest[]>([]);
 
@@ -41,6 +48,15 @@ export function EmployeeHome({ me, onNav }: Props) {
       </section>
 
       <div className="grid gap-3">
+        {mgr && mgr.pending_count > 0 && (
+          <BigButton
+            icon="🔔"
+            title={`${mgr.pending_count} ${mgr.pending_count === 1 ? "בקשה ממתינה" : "בקשות ממתינות"} לאישורך`}
+            subtitle="עובדים בצוות שלך מחכים לתשובה"
+            onClick={() => onNav("/me/approvals")}
+            color="dev"
+          />
+        )}
         <BigButton
           icon="➕"
           title="בקשת ציוד חדשה"
@@ -98,11 +114,16 @@ function BigButton({
   title: string;
   subtitle: string;
   onClick: () => void;
-  color: "accent" | "knowledge";
+  color: "accent" | "knowledge" | "dev";
 }) {
   const ringClass =
-    color === "accent" ? "border-accent/40 hover:border-accent" : "border-knowledge/40 hover:border-knowledge";
-  const glowClass = color === "accent" ? "from-accent/20" : "from-knowledge/20";
+    color === "accent"
+      ? "border-accent/40 hover:border-accent"
+      : color === "knowledge"
+        ? "border-knowledge/40 hover:border-knowledge"
+        : "border-dev/40 hover:border-dev";
+  const glowClass =
+    color === "accent" ? "from-accent/20" : color === "knowledge" ? "from-knowledge/20" : "from-dev/20";
   return (
     <button
       onClick={onClick}

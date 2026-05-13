@@ -16,13 +16,18 @@ import {
   findEmployeeByEmail,
   findSessionWithEmployee,
 } from "../db/auth.js";
-import { sendEmail, magicLinkTemplate } from "../lib/email.js";
+import { sendEmail, magicLinkTemplate, managerApprovalTemplate } from "../lib/email.js";
 import { env } from "../lib/env.js";
 import {
   createRequest,
+  getRequest,
+  listPendingForManager,
   listRequests,
+  managerApprove,
+  reject as rejectRequest,
   type EquipmentRequestEnriched,
 } from "../db/equipment.js";
+import { getEmployeeById, getManagerOf, listDirectReports } from "../db/employees.js";
 
 // ===== Helpers =====
 
@@ -207,8 +212,15 @@ export async function registerEmployeeRoutes(app: FastifyInstance): Promise<void
     if (!body.catalog_id && !body.custom_name) {
       return reply.code(400).send({ error: "catalog_id or custom_name required" });
     }
+
+    // Auto-assign the manager so the approval routes to the right person.
+    // Falls back to NULL when the employee has no manager in the org chart
+    // (e.g., the GM herself) — those requests will surface in CEO's queue.
+    const manager = getManagerOf(employee);
+
+    let request;
     try {
-      return createRequest({
+      request = createRequest({
         employee_id: employee.id, // <-- enforced server-side
         catalog_id: typeof body.catalog_id === "number" ? body.catalog_id : null,
         custom_name: typeof body.custom_name === "string" ? body.custom_name : null,
@@ -220,11 +232,120 @@ export async function registerEmployeeRoutes(app: FastifyInstance): Promise<void
             : null,
         delivery_address:
           typeof body.delivery_address === "string" ? body.delivery_address : null,
+        manager_employee_id: manager?.id ?? null,
       });
     } catch (e) {
       return reply.code(400).send({ error: (e as Error).message });
     }
+
+    // Fire-and-forget email to the manager (don't block the response on it).
+    if (manager?.email) {
+      const itemName =
+        typeof body.catalog_id === "number" && request.catalog_id
+          ? // best-effort lookup; falls back to custom_name if missing
+            (await import("../db/equipment.js"))
+              .getCatalogItem(request.catalog_id)?.name ?? request.custom_name ?? "פריט"
+          : request.custom_name ?? "פריט";
+      const tpl = managerApprovalTemplate({
+        managerName: manager.name_he ?? manager.name,
+        employeeName: employee.name_he ?? employee.name,
+        itemName,
+        quantity: request.quantity,
+        justification: request.justification,
+        deliveryTo: request.delivery_to,
+        approvalsLink: `${env.APP_PUBLIC_URL.replace(/\/$/, "")}/me/approvals`,
+      });
+      sendEmail({ to: manager.email, subject: tpl.subject, html: tpl.html, text: tpl.text }).catch(
+        (err) => console.error("[employee] manager email failed:", err),
+      );
+    } else if (manager) {
+      console.warn(
+        `[employee] request #${request.id}: manager ${manager.name} has no email — no notification sent`,
+      );
+    } else {
+      console.warn(
+        `[employee] request #${request.id}: no manager resolved for ${employee.name} — request goes to CEO queue`,
+      );
+    }
+
+    return request;
   });
+
+  // ===== Manager approvals =====
+
+  // List requests waiting for the current user (acting as a manager).
+  app.get(
+    "/api/employee/pending-approvals",
+    { preHandler: requireEmployee },
+    async (req) => {
+      const employee = (req as FastifyRequest & {
+        employee: NonNullable<ReturnType<typeof authenticateEmployee>>;
+      }).employee.employee;
+      return listPendingForManager(employee.id);
+    },
+  );
+
+  // Approve as the assigned manager.
+  app.post(
+    "/api/employee/requests/:id/manager-approve",
+    { preHandler: requireEmployee },
+    async (req, reply) => {
+      const id = Number((req.params as { id: string }).id);
+      const employee = (req as FastifyRequest & {
+        employee: NonNullable<ReturnType<typeof authenticateEmployee>>;
+      }).employee.employee;
+      const r = getRequest(id);
+      if (!r) return reply.code(404).send({ error: "not_found" });
+      if (r.manager_employee_id !== employee.id) {
+        return reply.code(403).send({ error: "not_your_request" });
+      }
+      const updated = managerApprove(id, employee.name_he ?? employee.name);
+      if (!updated) return reply.code(409).send({ error: "wrong_status" });
+      return updated;
+    },
+  );
+
+  // Reject as the assigned manager.
+  app.post(
+    "/api/employee/requests/:id/manager-reject",
+    { preHandler: requireEmployee },
+    async (req, reply) => {
+      const id = Number((req.params as { id: string }).id);
+      const employee = (req as FastifyRequest & {
+        employee: NonNullable<ReturnType<typeof authenticateEmployee>>;
+      }).employee.employee;
+      const body = (req.body ?? {}) as { reason?: string };
+      if (!body.reason?.trim()) {
+        return reply.code(400).send({ error: "reason_required" });
+      }
+      const r = getRequest(id);
+      if (!r) return reply.code(404).send({ error: "not_found" });
+      if (r.manager_employee_id !== employee.id) {
+        return reply.code(403).send({ error: "not_your_request" });
+      }
+      const updated = rejectRequest(id, employee.name_he ?? employee.name, body.reason.trim());
+      if (!updated) return reply.code(409).send({ error: "wrong_status" });
+      return updated;
+    },
+  );
+
+  // Quick fact: am I a manager? (used to show/hide the Approvals tab).
+  app.get(
+    "/api/employee/is-manager",
+    { preHandler: requireEmployee },
+    async (req) => {
+      const employee = (req as FastifyRequest & {
+        employee: NonNullable<ReturnType<typeof authenticateEmployee>>;
+      }).employee.employee;
+      const reports = listDirectReports(employee);
+      const pending = listPendingForManager(employee.id);
+      return {
+        is_manager: reports.length > 0,
+        reports_count: reports.length,
+        pending_count: pending.length,
+      };
+    },
+  );
 
   // Catalog (read-only for employees — they pick from active items).
   app.get("/api/employee/catalog", { preHandler: requireEmployee }, async () => {

@@ -149,6 +149,40 @@ export function listEmployeesByMonth(monthMM: string): Employee[] {
     .all(monthMM) as Employee[];
 }
 
+/**
+ * Returns the employee record for the given employee's manager, or undefined.
+ * Resolves manager_org_id (the org-chart-string id of the manager) to an
+ * actual employees.id row. Falls back to manager_name lookup if org id is
+ * missing (legacy data).
+ */
+export function getManagerOf(employee: Employee): Employee | undefined {
+  if (employee.manager_org_id) {
+    const m = db
+      .prepare(`SELECT * FROM employees WHERE org_chart_id = ? AND active = 1`)
+      .get(employee.manager_org_id) as Employee | undefined;
+    if (m) return m;
+  }
+  if (employee.manager_name) {
+    return db
+      .prepare(`SELECT * FROM employees WHERE name = ? AND active = 1 LIMIT 1`)
+      .get(employee.manager_name) as Employee | undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Direct reports of `managerEmployee` — used to detect "is this person a
+ * manager?" so the UI can show the approvals tab only when relevant.
+ */
+export function listDirectReports(managerEmployee: Employee): Employee[] {
+  if (!managerEmployee.org_chart_id) return [];
+  return db
+    .prepare(
+      `SELECT * FROM employees WHERE manager_org_id = ? AND active = 1 ORDER BY name`,
+    )
+    .all(managerEmployee.org_chart_id) as Employee[];
+}
+
 export function markDeparted(employeeId: number, departedAt: string): void {
   db.prepare(
     `UPDATE employees SET active = 0, departed_at = ?, updated_at = datetime('now') WHERE id = ?`,

@@ -62,4 +62,21 @@ export const employeeApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  // ===== Manager actions =====
+  isManager: () =>
+    json<{ is_manager: boolean; reports_count: number; pending_count: number }>(
+      "/api/employee/is-manager",
+    ),
+  pendingApprovals: () => json<EquipmentRequest[]>("/api/employee/pending-approvals"),
+  managerApprove: (id: number) =>
+    json<EquipmentRequest>(`/api/employee/requests/${id}/manager-approve`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  managerReject: (id: number, reason: string) =>
+    json<EquipmentRequest>(`/api/employee/requests/${id}/manager-reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
 };

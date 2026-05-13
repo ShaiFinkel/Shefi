@@ -80,6 +80,8 @@ ensureColumn("employees", "org_chart_order", "INTEGER");
 // Equipment requests — delivery destination
 ensureColumn("equipment_requests", "delivery_to", "TEXT");
 ensureColumn("equipment_requests", "delivery_address", "TEXT");
+// Equipment requests — assigned approver (employee.id of the manager)
+ensureColumn("equipment_requests", "manager_employee_id", "INTEGER");
 
 // ---------- Items ----------
 

@@ -51,6 +51,7 @@ export interface EquipmentRequest {
   received_at: string | null;
   delivery_to: DeliveryTo | null;
   delivery_address: string | null;
+  manager_employee_id: number | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -151,6 +152,7 @@ export interface CreateRequestInput {
   notes?: string | null;
   delivery_to?: DeliveryTo | null;
   delivery_address?: string | null;
+  manager_employee_id?: number | null;
 }
 
 export function createRequest(input: CreateRequestInput): EquipmentRequest {
@@ -162,8 +164,10 @@ export function createRequest(input: CreateRequestInput): EquipmentRequest {
   }
   const stmt = db.prepare(`
     INSERT INTO equipment_requests
-      (employee_id, catalog_id, custom_name, quantity, justification, notes, delivery_to, delivery_address)
-    VALUES (@employee_id, @catalog_id, @custom_name, @quantity, @justification, @notes, @delivery_to, @delivery_address)
+      (employee_id, catalog_id, custom_name, quantity, justification, notes,
+       delivery_to, delivery_address, manager_employee_id)
+    VALUES (@employee_id, @catalog_id, @custom_name, @quantity, @justification,
+            @notes, @delivery_to, @delivery_address, @manager_employee_id)
     RETURNING *
   `);
   return stmt.get({
@@ -176,6 +180,7 @@ export function createRequest(input: CreateRequestInput): EquipmentRequest {
     delivery_to: input.delivery_to ?? null,
     delivery_address:
       input.delivery_to === "home" ? input.delivery_address?.trim() ?? null : null,
+    manager_employee_id: input.manager_employee_id ?? null,
   }) as EquipmentRequest;
 }
 
@@ -232,6 +237,21 @@ export function listRequests(filter: ListRequestsFilter = {}): EquipmentRequestE
 
   const sql = `${ENRICHED_SELECT}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY r.created_at DESC`;
   return db.prepare(sql).all(...params) as EquipmentRequestEnriched[];
+}
+
+/**
+ * Requests waiting for a specific manager's decision (status='pending'
+ * AND assigned to them via manager_employee_id). Sorted oldest-first so
+ * the queue feels FIFO.
+ */
+export function listPendingForManager(managerEmployeeId: number): EquipmentRequestEnriched[] {
+  return db
+    .prepare(
+      `${ENRICHED_SELECT}
+       WHERE r.status = 'pending' AND r.manager_employee_id = ?
+       ORDER BY r.created_at ASC`,
+    )
+    .all(managerEmployeeId) as EquipmentRequestEnriched[];
 }
 
 // Two-stage approval

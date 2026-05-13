@@ -179,6 +179,7 @@ export interface EquipmentRequest {
   received_at: string | null;
   delivery_to: DeliveryTo | null;
   delivery_address: string | null;
+  manager_employee_id: number | null;
   notes: string | null;
   created_at: string;
   updated_at: string;

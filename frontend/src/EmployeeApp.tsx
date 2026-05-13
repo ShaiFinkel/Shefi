@@ -2,19 +2,21 @@
 // the magic-link verify flow. No WebSocket, no agents, no admin endpoints —
 // only what the employee themselves needs.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { employeeApi, type EmployeeMe } from "./employee-api";
 import { EmployeeLogin } from "./components/employee/EmployeeLogin";
 import { EmployeeHome } from "./components/employee/EmployeeHome";
 import { EmployeeNewRequest } from "./components/employee/EmployeeNewRequest";
 import { EmployeeHistory } from "./components/employee/EmployeeHistory";
+import { EmployeeApprovals } from "./components/employee/EmployeeApprovals";
 import { IOSInstallBanner } from "./components/employee/IOSInstallBanner";
 
-type EmpView = "home" | "new-request" | "history";
+type EmpView = "home" | "new-request" | "history" | "approvals";
 
 function pathToView(path: string): EmpView {
   if (path.startsWith("/me/new-request")) return "new-request";
   if (path.startsWith("/me/history")) return "history";
+  if (path.startsWith("/me/approvals")) return "approvals";
   return "home";
 }
 
@@ -23,10 +25,17 @@ function navTo(path: string) {
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
+interface ManagerStatus {
+  is_manager: boolean;
+  reports_count: number;
+  pending_count: number;
+}
+
 export function EmployeeApp() {
   const [me, setMe] = useState<EmployeeMe | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<EmpView>(() => pathToView(window.location.pathname));
+  const [mgr, setMgr] = useState<ManagerStatus | null>(null);
 
   // Re-evaluate view on browser back/forward + on programmatic navTo()
   useEffect(() => {
@@ -34,6 +43,15 @@ export function EmployeeApp() {
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
+
+  // Refresh the manager-status badge whenever the view changes (cheap and
+  // makes the badge feel live after the manager approves/rejects something).
+  const refreshMgrStatus = useCallback(() => {
+    employeeApi.isManager().then(setMgr).catch(() => setMgr(null));
+  }, []);
+  useEffect(() => {
+    if (me) refreshMgrStatus();
+  }, [me, view, refreshMgrStatus]);
 
   // Initial auth check (and re-check on visibility change in case the cookie
   // was set in another tab via the verify endpoint).
@@ -81,17 +99,18 @@ export function EmployeeApp() {
 
   return (
     <div className="min-h-screen flex flex-col bg-bg text-ink">
-      <EmployeeNav me={me} view={view} onNav={navTo} onLogout={handleLogout} />
+      <EmployeeNav me={me} view={view} mgr={mgr} onNav={navTo} onLogout={handleLogout} />
       <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-6">
-        {view === "home" && <EmployeeHome me={me} onNav={navTo} />}
+        {view === "home" && <EmployeeHome me={me} mgr={mgr} onNav={navTo} />}
         {view === "new-request" && (
           <EmployeeNewRequest me={me} onSubmitted={() => navTo("/me/history")} onCancel={() => navTo("/me")} />
         )}
         {view === "history" && <EmployeeHistory />}
+        {view === "approvals" && <EmployeeApprovals />}
       </main>
       <IOSInstallBanner />
       <footer className="text-[11px] text-ink2 text-center py-4 border-t border-panel2">
-        Shefi &amp; Co. · גרסה 2.4
+        Shefi &amp; Co. · גרסה 2.5
       </footer>
     </div>
   );
@@ -108,14 +127,17 @@ function CenteredPanel({ children }: { children: React.ReactNode }) {
 function EmployeeNav({
   me,
   view,
+  mgr,
   onNav,
   onLogout,
 }: {
   me: EmployeeMe;
   view: EmpView;
+  mgr: ManagerStatus | null;
   onNav: (path: string) => void;
   onLogout: () => void;
 }) {
+  const showApprovals = mgr?.is_manager || (mgr?.pending_count ?? 0) > 0;
   return (
     <header className="bg-panel/80 backdrop-blur border-b border-panel2 sticky top-0 z-10">
       <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
@@ -142,6 +164,15 @@ function EmployeeNav({
           <NavBtn active={view === "history"} onClick={() => onNav("/me/history")}>
             📋 שלי
           </NavBtn>
+          {showApprovals && (
+            <NavBtn
+              active={view === "approvals"}
+              onClick={() => onNav("/me/approvals")}
+              badge={mgr?.pending_count ?? 0}
+            >
+              ✓ אישורים
+            </NavBtn>
+          )}
           <button
             onClick={onLogout}
             className="text-[11px] text-ink2 hover:text-dev px-2 py-1.5 rounded-md"
@@ -159,21 +190,28 @@ function NavBtn({
   active,
   onClick,
   children,
+  badge,
 }: {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
+  badge?: number;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-1.5 rounded-md transition-colors ${
+      className={`relative px-3 py-1.5 rounded-md transition-colors ${
         active
           ? "bg-accent/20 text-accent border border-accent/40"
           : "text-ink2 hover:text-ink hover:bg-panel2"
       }`}
     >
       {children}
+      {badge !== undefined && badge > 0 && (
+        <span className="absolute -top-1 -left-1 bg-dev text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
+          {badge > 9 ? "9+" : badge}
+        </span>
+      )}
     </button>
   );
 }
