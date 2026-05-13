@@ -10,6 +10,8 @@ const TABS: Tab[] = [
   { id: "home", label: "בית", emoji: "🏠" },
   { id: "birthdays", label: "ימי הולדת", emoji: "🎂" },
   { id: "people", label: "עובדים", emoji: "👥" },
+  { id: "orgchart", label: "עץ ארגוני", emoji: "🌳" },
+  { id: "equipment", label: "ציוד", emoji: "📦" },
   { id: "timeline", label: "שיחות הצוות", emoji: "💬" },
   { id: "proposals", label: "פיתוח", emoji: "🛠" },
 ];

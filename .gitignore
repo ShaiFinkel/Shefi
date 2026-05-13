@@ -9,4 +9,5 @@ data/*.db
 data/*.db-*
 data/*.jsonl
 data/inputs/
+data/quotes/
 *.log

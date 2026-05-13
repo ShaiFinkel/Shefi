@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { eventBus } from "./events.js";
@@ -25,6 +26,9 @@ export async function startServer(port = 3000) {
 
   await app.register(cors, { origin: true });
   await app.register(websocket);
+  await app.register(multipart, {
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB cap per quote file
+  });
 
   await registerDashboardRoutes(app);
 

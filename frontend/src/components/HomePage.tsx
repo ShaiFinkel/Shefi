@@ -7,7 +7,7 @@ interface Props {
   onChatWith: (agent: string) => void;
 }
 
-export type View = "home" | "timeline" | "birthdays" | "people" | "proposals";
+export type View = "home" | "timeline" | "birthdays" | "people" | "orgchart" | "equipment" | "proposals";
 
 interface CardProps {
   emoji: string;

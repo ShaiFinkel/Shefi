@@ -161,4 +161,51 @@ CREATE TABLE IF NOT EXISTS birthday_orders (
 
 CREATE INDEX IF NOT EXISTS idx_birthday_orders_month ON birthday_orders(month);
 CREATE INDEX IF NOT EXISTS idx_birthday_orders_status ON birthday_orders(status);
+
+-- v2.3: Equipment catalog (laptops, monitors, chairs, etc. employees can request)
+CREATE TABLE IF NOT EXISTS equipment_catalog (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,                    -- laptop | monitor | chair | accessory | software | phone | other
+  description TEXT,
+  vendor TEXT,                               -- preferred vendor name
+  price INTEGER,                             -- estimated unit price
+  currency TEXT NOT NULL DEFAULT '₪',
+  image_url TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_equipment_catalog_active ON equipment_catalog(active);
+CREATE INDEX IF NOT EXISTS idx_equipment_catalog_category ON equipment_catalog(category);
+
+-- v2.3: Equipment requests with two-stage approval (manager → exec)
+CREATE TABLE IF NOT EXISTS equipment_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  catalog_id INTEGER REFERENCES equipment_catalog(id) ON DELETE SET NULL,
+  custom_name TEXT,                          -- when not from catalog
+  quantity INTEGER NOT NULL DEFAULT 1,
+  justification TEXT,                        -- employee reason
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending','manager_approved','exec_approved','ordered','received','rejected')),
+  manager_decision_by TEXT,                  -- manager name (text, since CEO acts on behalf)
+  manager_decision_at TEXT,
+  exec_decision_by TEXT,                     -- exec/CEO name
+  exec_decision_at TEXT,
+  quote_url TEXT,                            -- link/path to attached price quote
+  rejected_reason TEXT,
+  ordered_at TEXT,
+  received_at TEXT,
+  delivery_to TEXT CHECK (delivery_to IN ('office','home') OR delivery_to IS NULL),
+  delivery_address TEXT,                     -- required when delivery_to='home'
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_equipment_requests_status ON equipment_requests(status);
+CREATE INDEX IF NOT EXISTS idx_equipment_requests_employee ON equipment_requests(employee_id);
+CREATE INDEX IF NOT EXISTS idx_equipment_requests_catalog ON equipment_requests(catalog_id);
 `;

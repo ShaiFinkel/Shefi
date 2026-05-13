@@ -9,6 +9,8 @@ import { TopNav } from "./components/TopNav";
 import { HomePage, type View } from "./components/HomePage";
 import { BirthdaysPage } from "./components/BirthdaysPage";
 import { PeoplePage } from "./components/PeoplePage";
+import { OrgChartPage } from "./components/OrgChartPage";
+import { EquipmentPage } from "./components/EquipmentPage";
 
 export function App() {
   const [view, setView] = useState<View>("home");
@@ -126,6 +128,10 @@ export function App() {
         {view === "birthdays" && <BirthdaysPage />}
 
         {view === "people" && <PeoplePage />}
+
+        {view === "orgchart" && <OrgChartPage />}
+
+        {view === "equipment" && <EquipmentPage />}
 
         {view === "timeline" && (
           <>

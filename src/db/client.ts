@@ -64,6 +64,22 @@ ensureColumn("employees", "org_chart_id", "TEXT");
 ensureColumn("employees", "manager_org_id", "TEXT");
 ensureColumn("employees", "level", "INTEGER");
 ensureColumn("employees", "location", "TEXT");
+// Org-chart enrichment (Dragontail standalone.html sync)
+ensureColumn("employees", "hire_date", "TEXT");
+ensureColumn("employees", "person_number", "TEXT");
+ensureColumn("employees", "tech_title", "TEXT");
+ensureColumn("employees", "address", "TEXT");
+ensureColumn("employees", "grade_level", "TEXT");
+ensureColumn("employees", "gender", "TEXT");
+ensureColumn("employees", "manager_name", "TEXT");
+ensureColumn("employees", "salary_monthly", "INTEGER");
+ensureColumn("employees", "salary_yearly", "INTEGER");
+ensureColumn("employees", "currency", "TEXT");
+ensureColumn("employees", "org_chart_order", "INTEGER");
+
+// Equipment requests — delivery destination
+ensureColumn("equipment_requests", "delivery_to", "TEXT");
+ensureColumn("equipment_requests", "delivery_address", "TEXT");
 
 // ---------- Items ----------
 

@@ -33,6 +33,16 @@ export interface Employee {
   manager_org_id: string | null;
   level: number | null;
   location: string | null;
+  hire_date: string | null;
+  person_number: string | null;
+  tech_title: string | null;
+  address: string | null;
+  grade_level: string | null;
+  gender: string | null;
+  manager_name: string | null;
+  salary_monthly: number | null;
+  salary_yearly: number | null;
+  currency: string | null;
   active: number;
   departed_at: string | null;
   created_at: string;
