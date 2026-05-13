@@ -13,6 +13,26 @@ const schema = z.object({
   OPENAI_MODEL_EMBEDDING: z.string().default("text-embedding-3-small"),
   TZ: z.string().default("Asia/Jerusalem"),
   DB_PATH: z.string().default("./data/shefi.db"),
+  // ===== Public app URL (used in magic-link emails) =====
+  // Set to your Cloudflare Tunnel domain in production, e.g. https://shefi.team
+  // Falls back to localhost for dev so the magic links remain clickable on the same machine.
+  APP_PUBLIC_URL: z.string().default("http://localhost:3000"),
+  // ===== Email (Resend) =====
+  // If empty, magic links are printed to the server console (dev mode)
+  // and a notice is shown in the UI so you can copy them manually.
+  RESEND_API_KEY: z.string().default(""),
+  RESEND_FROM_EMAIL: z.string().default("Shefi & Co. <onboarding@resend.dev>"),
+  // ===== Admin guard for /api endpoints (CEO dashboard) =====
+  // Random string. Stored in browser localStorage so only browsers that you
+  // explicitly logged in from your admin device can access management endpoints.
+  // Empty = no admin protection (open access). Set ANY value to enable.
+  ADMIN_TOKEN: z.string().default(""),
+  // ===== Web Push (VAPID) =====
+  // Generate once with `npx web-push generate-vapid-keys` and paste here.
+  // If empty, push notifications are silently disabled.
+  VAPID_PUBLIC_KEY: z.string().default(""),
+  VAPID_PRIVATE_KEY: z.string().default(""),
+  VAPID_SUBJECT: z.string().default("mailto:shai@example.com"),
 });
 
 const parsed = schema.safeParse(process.env);

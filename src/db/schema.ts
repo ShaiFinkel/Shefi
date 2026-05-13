@@ -208,4 +208,46 @@ CREATE TABLE IF NOT EXISTS equipment_requests (
 CREATE INDEX IF NOT EXISTS idx_equipment_requests_status ON equipment_requests(status);
 CREATE INDEX IF NOT EXISTS idx_equipment_requests_employee ON equipment_requests(employee_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_requests_catalog ON equipment_requests(catalog_id);
+
+-- v2.4: Email magic-link tokens (one-time, short-lived)
+CREATE TABLE IF NOT EXISTS email_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL UNIQUE,                  -- random URL-safe string
+  employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,                          -- the email that requested it (audit trail)
+  expires_at TEXT NOT NULL,                     -- ~30 minutes from issue
+  used_at TEXT,                                 -- single-use; NULL until consumed
+  ip TEXT,                                      -- requester IP (audit)
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_tokens_token ON email_tokens(token);
+CREATE INDEX IF NOT EXISTS idx_email_tokens_employee ON email_tokens(employee_id);
+
+-- v2.4: Long-lived employee sessions (after magic link is consumed)
+CREATE TABLE IF NOT EXISTS employee_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL UNIQUE,                   -- session cookie value
+  employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL,                     -- ~30 days from issue
+  user_agent TEXT,                              -- audit
+  last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_employee_sessions_token ON employee_sessions(token);
+CREATE INDEX IF NOT EXISTS idx_employee_sessions_employee ON employee_sessions(employee_id);
+
+-- v2.4: Web Push subscriptions (one device = one row)
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,                -- the unique push URL
+  p256dh TEXT NOT NULL,                         -- crypto key
+  auth TEXT NOT NULL,                           -- crypto key
+  user_agent TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_employee ON push_subscriptions(employee_id);
 `;

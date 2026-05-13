@@ -14,11 +14,27 @@ import type {
 
 const BASE = "";
 
+// localStorage key where the admin token is cached on the CEO browser.
+// Set via the dashboard "Admin sign-in" prompt; auto-attached to every
+// admin API call. Empty/missing = no header sent (fine when ADMIN_TOKEN is
+// not configured server-side).
+export const ADMIN_TOKEN_KEY = "shefi_admin_token";
+
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
+  const adminToken =
+    typeof localStorage !== "undefined" ? localStorage.getItem(ADMIN_TOKEN_KEY) : null;
   const res = await fetch(BASE + url, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(adminToken ? { "X-Admin-Token": adminToken } : {}),
+      ...(init?.headers || {}),
+    },
   });
+  if (res.status === 401) {
+    throw new Error("admin_token_required");
+  }
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
 }
@@ -155,8 +171,14 @@ export const api = {
   uploadQuote: async (id: number, file: File): Promise<EquipmentRequest> => {
     const fd = new FormData();
     fd.append("quote", file, file.name);
+    const adminToken =
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem(ADMIN_TOKEN_KEY)
+        : null;
     const res = await fetch(`/api/equipment/requests/${id}/upload-quote`, {
       method: "POST",
+      credentials: "include",
+      headers: adminToken ? { "X-Admin-Token": adminToken } : undefined,
       body: fd,
     });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);

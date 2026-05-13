@@ -18,19 +18,57 @@ import {
 import { mergeProposalBranch } from "../dev/git.js";
 import { runFromCEO } from "../agents/runner.js";
 import { registerDashboardRoutes } from "./api-dashboard.js";
+import { registerEmployeeRoutes } from "./api-employee.js";
+import { cleanupExpiredAuth } from "../db/auth.js";
+import { requireAdmin, isAdminEnabled } from "./admin-guard.js";
 
 const FRONTEND_DIST = resolve(process.cwd(), "frontend/dist");
 
 export async function startServer(port = 3000) {
   const app = Fastify({ logger: false });
 
-  await app.register(cors, { origin: true });
+  await app.register(cors, {
+    origin: true,
+    credentials: true, // needed for the session cookie on the employee PWA
+  });
   await app.register(websocket);
   await app.register(multipart, {
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB cap per quote file
   });
 
+  // Global admin guard — only active when ADMIN_TOKEN is set in .env.
+  // Protects every /api/* route EXCEPT /api/auth/* and /api/employee/* (which
+  // have their own session-based auth) and /api/health (status check).
+  if (isAdminEnabled()) {
+    app.addHook("onRequest", async (req, reply) => {
+      const url = req.url.split("?")[0];
+      if (!url.startsWith("/api/")) return;
+      if (url === "/api/health") return;
+      if (url.startsWith("/api/auth/")) return;
+      if (url.startsWith("/api/employee/")) return;
+      // Static-ish file under /api/equipment/quotes/ — also gated, since quotes can be sensitive
+      return requireAdmin(req, reply);
+    });
+    console.log("✓ admin guard enabled (ADMIN_TOKEN required for management endpoints)");
+  } else {
+    console.log("⚠ admin guard disabled (ADMIN_TOKEN empty in .env — open access on your network)");
+  }
+
   await registerDashboardRoutes(app);
+  await registerEmployeeRoutes(app);
+
+  // Periodic cleanup of expired magic-link tokens & sessions (best-effort).
+  // 6h cadence is plenty given TTLs are 30min / 30days.
+  setInterval(() => {
+    try {
+      const r = cleanupExpiredAuth();
+      if (r.tokens || r.sessions) {
+        console.log(`[auth] cleaned ${r.tokens} tokens, ${r.sessions} sessions`);
+      }
+    } catch (err) {
+      console.error("[auth] cleanup failed:", err);
+    }
+  }, 6 * 60 * 60 * 1000).unref();
 
   // ===== REST =====
   app.get("/api/health", async () => ({ ok: true }));
