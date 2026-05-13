@@ -150,14 +150,107 @@ export function deleteSession(token: string): void {
   db.prepare(`DELETE FROM employee_sessions WHERE token = ?`).run(token);
 }
 
+// ===== Approval tokens (emailed one-click links) =====
+
+export const APPROVAL_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+export type ApprovalAction = "approve" | "reject";
+
+export interface ApprovalToken {
+  id: number;
+  token: string;
+  request_id: number;
+  manager_employee_id: number;
+  action: ApprovalAction;
+  expires_at: string;
+  used_at: string | null;
+  used_ip: string | null;
+  reason: string | null;
+  created_at: string;
+}
+
+/**
+ * Issues an approve+reject token pair for one request, returned as plain
+ * URL-safe strings. Both share the same TTL.
+ */
+export function createApprovalTokens(input: {
+  request_id: number;
+  manager_employee_id: number;
+}): { approve: string; reject: string } {
+  const expires = isoFromNow(APPROVAL_TOKEN_TTL_MS);
+  const stmt = db.prepare(`
+    INSERT INTO approval_tokens (token, request_id, manager_employee_id, action, expires_at)
+    VALUES (@token, @request_id, @manager_employee_id, @action, @expires_at)
+  `);
+  const tx = db.transaction(() => {
+    const approve = randomToken(24);
+    const reject = randomToken(24);
+    stmt.run({
+      token: approve,
+      request_id: input.request_id,
+      manager_employee_id: input.manager_employee_id,
+      action: "approve",
+      expires_at: expires,
+    });
+    stmt.run({
+      token: reject,
+      request_id: input.request_id,
+      manager_employee_id: input.manager_employee_id,
+      action: "reject",
+      expires_at: expires,
+    });
+    return { approve, reject };
+  });
+  return tx();
+}
+
+/**
+ * Looks up a token without consuming it (used when rendering the reject
+ * form so the form can re-submit the same token on POST).
+ */
+export function findApprovalToken(token: string): ApprovalToken | null {
+  if (!token) return null;
+  const row = db
+    .prepare(`SELECT * FROM approval_tokens WHERE token = ?`)
+    .get(token) as ApprovalToken | undefined;
+  if (!row) return null;
+  if (new Date(row.expires_at).getTime() < Date.now()) return null;
+  return row;
+}
+
+/**
+ * Single-use consume. Returns the row on success, or null if missing /
+ * expired / already used.
+ */
+export function consumeApprovalToken(input: {
+  token: string;
+  ip?: string | null;
+  reason?: string | null;
+}): ApprovalToken | null {
+  const row = findApprovalToken(input.token);
+  if (!row) return null;
+  if (row.used_at) return null;
+  db.prepare(
+    `UPDATE approval_tokens
+       SET used_at = datetime('now'),
+           used_ip = ?,
+           reason = ?
+     WHERE id = ?`,
+  ).run(input.ip ?? null, input.reason ?? null, row.id);
+  return row;
+}
+
 // ===== Maintenance =====
 
-export function cleanupExpiredAuth(): { tokens: number; sessions: number } {
+export function cleanupExpiredAuth(): { tokens: number; sessions: number; approvals: number } {
   const tokens = db
     .prepare(`DELETE FROM email_tokens WHERE expires_at < datetime('now', '-1 day')`)
     .run().changes;
   const sessions = db
     .prepare(`DELETE FROM employee_sessions WHERE expires_at < datetime('now')`)
     .run().changes;
-  return { tokens, sessions };
+  const approvals = db
+    .prepare(`DELETE FROM approval_tokens WHERE expires_at < datetime('now', '-1 day')`)
+    .run().changes;
+  return { tokens, sessions, approvals };
 }

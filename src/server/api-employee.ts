@@ -15,6 +15,9 @@ import {
   deleteSession,
   findEmployeeByEmail,
   findSessionWithEmployee,
+  createApprovalTokens,
+  findApprovalToken,
+  consumeApprovalToken,
 } from "../db/auth.js";
 import { sendEmail, magicLinkTemplate, managerApprovalTemplate } from "../lib/email.js";
 import { env } from "../lib/env.js";
@@ -246,6 +249,14 @@ export async function registerEmployeeRoutes(app: FastifyInstance): Promise<void
             (await import("../db/equipment.js"))
               .getCatalogItem(request.catalog_id)?.name ?? request.custom_name ?? "פריט"
           : request.custom_name ?? "פריט";
+
+      // Issue one-shot tokens so the manager can approve / reject directly
+      // from the email without ever logging in.
+      const tokens = createApprovalTokens({
+        request_id: request.id,
+        manager_employee_id: manager.id,
+      });
+      const base = env.APP_PUBLIC_URL.replace(/\/$/, "");
       const tpl = managerApprovalTemplate({
         managerName: manager.name_he ?? manager.name,
         employeeName: employee.name_he ?? employee.name,
@@ -253,7 +264,10 @@ export async function registerEmployeeRoutes(app: FastifyInstance): Promise<void
         quantity: request.quantity,
         justification: request.justification,
         deliveryTo: request.delivery_to,
-        approvalsLink: `${env.APP_PUBLIC_URL.replace(/\/$/, "")}/me/approvals`,
+        deliveryAddress: request.delivery_address,
+        approveLink: `${base}/api/approval/act?token=${encodeURIComponent(tokens.approve)}`,
+        rejectLink: `${base}/api/approval/act?token=${encodeURIComponent(tokens.reject)}`,
+        portalLink: `${base}/me/approvals`,
       });
       sendEmail({ to: manager.email, subject: tpl.subject, html: tpl.html, text: tpl.text }).catch(
         (err) => console.error("[employee] manager email failed:", err),
@@ -352,4 +366,233 @@ export async function registerEmployeeRoutes(app: FastifyInstance): Promise<void
     const { listCatalog } = await import("../db/equipment.js");
     return listCatalog(false); // active only
   });
+
+  // ===== One-click email approval (no login required) =====
+  //
+  // The manager gets an email with two action-specific URLs. Each URL embeds
+  // a single-use token that already encodes the request_id, the action and
+  // the authorized manager — so we don't need a session here.
+  //
+  //   GET  /api/approval/act?token=<approve>   -> consume + approve + show OK page
+  //   GET  /api/approval/act?token=<reject>    -> render small reject form (no consume)
+  //   POST /api/approval/reject                -> consume + reject + show OK page
+  //
+  // These routes return inline HTML pages, since they're opened from the inbox
+  // in a fresh browser tab.
+
+  app.get("/api/approval/act", async (req, reply) => {
+    const q = req.query as { token?: string };
+    const token = q.token?.trim() ?? "";
+    const row = findApprovalToken(token);
+    if (!row) {
+      return reply.code(400).type("text/html").send(approvalErrorPage("הקישור לא תקף או פג תוקפו."));
+    }
+    if (row.used_at) {
+      return reply
+        .code(409)
+        .type("text/html")
+        .send(approvalErrorPage("כבר השתמשת בקישור הזה."));
+    }
+    const reqRow = getRequest(row.request_id);
+    if (!reqRow) {
+      return reply.code(404).type("text/html").send(approvalErrorPage("הבקשה לא נמצאה."));
+    }
+    if (reqRow.status !== "pending") {
+      return reply
+        .code(409)
+        .type("text/html")
+        .send(approvalErrorPage(`הבקשה כבר במצב "${statusLabel(reqRow.status)}" — לא ניתן לפעול עליה.`));
+    }
+    const manager = getEmployeeById(row.manager_employee_id);
+    const itemName = reqRow.catalog_name ?? reqRow.custom_name ?? "פריט";
+    const employeeName = reqRow.employee_name ?? "עובד/ת";
+
+    if (row.action === "approve") {
+      // Single click → instant approval.
+      consumeApprovalToken({
+        token,
+        ip: (req.ip ?? "").slice(0, 64),
+      });
+      managerApprove(reqRow.id, manager?.name_he ?? manager?.name ?? "manager-via-email");
+      return reply.type("text/html").send(
+        approvalSuccessPage({
+          title: "✓ הבקשה אושרה",
+          subtitle: `העברנו אותה לאישור הבא בתהליך.`,
+          itemName,
+          employeeName,
+          quantity: reqRow.quantity,
+          accent: "#5cd6a8",
+        }),
+      );
+    }
+
+    // action === "reject" → show a small page asking for the reason.
+    return reply.type("text/html").send(
+      approvalRejectFormPage({
+        token,
+        itemName,
+        employeeName,
+        quantity: reqRow.quantity,
+        justification: reqRow.justification,
+      }),
+    );
+  });
+
+  app.post("/api/approval/reject", async (req, reply) => {
+    // Accept either form-encoded (from our own HTML form) or JSON.
+    const body = (req.body ?? {}) as { token?: string; reason?: string };
+    const token = body.token?.trim() ?? "";
+    const reason = body.reason?.trim() ?? "";
+    if (!token) {
+      return reply.code(400).type("text/html").send(approvalErrorPage("חסר טוקן."));
+    }
+    if (!reason) {
+      return reply.code(400).type("text/html").send(approvalErrorPage("חובה לציין סיבת דחייה."));
+    }
+    const row = findApprovalToken(token);
+    if (!row || row.action !== "reject") {
+      return reply.code(400).type("text/html").send(approvalErrorPage("הקישור לא תקף."));
+    }
+    if (row.used_at) {
+      return reply.code(409).type("text/html").send(approvalErrorPage("כבר השתמשת בקישור הזה."));
+    }
+    const reqRow = getRequest(row.request_id);
+    if (!reqRow) {
+      return reply.code(404).type("text/html").send(approvalErrorPage("הבקשה לא נמצאה."));
+    }
+    if (reqRow.status !== "pending") {
+      return reply
+        .code(409)
+        .type("text/html")
+        .send(approvalErrorPage(`הבקשה כבר במצב "${statusLabel(reqRow.status)}".`));
+    }
+    consumeApprovalToken({
+      token,
+      ip: (req.ip ?? "").slice(0, 64),
+      reason,
+    });
+    const manager = getEmployeeById(row.manager_employee_id);
+    rejectRequest(reqRow.id, manager?.name_he ?? manager?.name ?? "manager-via-email", reason);
+    const itemName = reqRow.catalog_name ?? reqRow.custom_name ?? "פריט";
+    const employeeName = reqRow.employee_name ?? "עובד/ת";
+    return reply.type("text/html").send(
+      approvalSuccessPage({
+        title: "✕ הבקשה נדחתה",
+        subtitle: `הסיבה תועברה לעובד/ת ולמערכת.`,
+        itemName,
+        employeeName,
+        quantity: reqRow.quantity,
+        accent: "#ff7c5c",
+        extra: `<div style="margin-top:14px;padding:12px;background:#0b0d12;border:1px solid #1b212d;border-radius:10px;font-size:13px;color:#a3aab8;text-align:right;"><span style="color:#ff7c5c;">סיבה:</span> ${escapeHtmlInline(reason)}</div>`,
+      }),
+    );
+  });
+}
+
+// ===== HTML page helpers (rendered server-side for /api/approval/*) =====
+
+function escapeHtmlInline(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function statusLabel(s: string): string {
+  switch (s) {
+    case "pending":
+      return "ממתין למנהל";
+    case "manager_approved":
+      return "אושר ע״י מנהל";
+    case "exec_approved":
+      return "אושר סופית";
+    case "rejected":
+      return "נדחה";
+    case "ordered":
+      return "הוזמן";
+    case "received":
+      return "התקבל";
+    default:
+      return s;
+  }
+}
+
+function htmlShell(title: string, body: string): string {
+  return `<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtmlInline(title)}</title><style>
+  body{margin:0;font-family:'Assistant','Heebo',-apple-system,BlinkMacSystemFont,sans-serif;background:#0b0d12;color:#e6e8ee;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;direction:rtl;}
+  .card{max-width:480px;width:100%;background:#141821;border:1px solid #1b212d;border-radius:16px;padding:32px;box-shadow:0 20px 60px rgba(0,0,0,.4);}
+  h1{margin:0 0 8px;font-size:24px;font-weight:700;}
+  .sub{margin:0 0 20px;color:#a3aab8;font-size:14px;}
+  .meta{background:#0b0d12;border:1px solid #1b212d;border-radius:10px;padding:14px;margin:14px 0;font-size:14px;line-height:1.7;}
+  .meta strong{color:#e6e8ee;}
+  .meta .dim{color:#a3aab8;}
+  textarea{width:100%;box-sizing:border-box;background:#0b0d12;color:#e6e8ee;border:1px solid #1b212d;border-radius:10px;padding:12px;font-family:inherit;font-size:14px;min-height:90px;resize:vertical;direction:rtl;}
+  textarea:focus{outline:none;border-color:#7c5cff;}
+  button{display:block;width:100%;margin-top:14px;padding:14px;border-radius:10px;border:0;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit;}
+  .btn-reject{background:#ff7c5c;color:#0b0d12;}
+  .btn-reject:hover{filter:brightness(1.05);}
+  .footer{margin-top:18px;text-align:center;color:#5a6172;font-size:11px;}
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:18px;}
+  .brand-mark{width:36px;height:36px;border-radius:8px;background:#7c5cff;color:white;font-weight:700;font-size:18px;line-height:36px;text-align:center;}
+  .brand-name{font-size:14px;color:#a3aab8;}
+</style></head><body><div class="card"><div class="brand"><div class="brand-mark">ש</div><div class="brand-name">Shefi &amp; Co. · אישור בקשות</div></div>${body}<div class="footer">הקישור חד-פעמי ויפוג בעוד 30 יום.</div></div></body></html>`;
+}
+
+function approvalErrorPage(msg: string): string {
+  return htmlShell(
+    "שגיאה",
+    `<h1 style="color:#ff7c5c;">לא ניתן להשלים את הפעולה</h1><p class="sub">${escapeHtmlInline(msg)}</p>`,
+  );
+}
+
+function approvalSuccessPage(input: {
+  title: string;
+  subtitle: string;
+  itemName: string;
+  employeeName: string;
+  quantity: number;
+  accent: string;
+  extra?: string;
+}): string {
+  return htmlShell(
+    input.title,
+    `<h1 style="color:${input.accent};">${escapeHtmlInline(input.title)}</h1>
+     <p class="sub">${escapeHtmlInline(input.subtitle)}</p>
+     <div class="meta">
+       <div><span class="dim">פריט:</span> <strong>${escapeHtmlInline(input.itemName)}</strong></div>
+       <div><span class="dim">עובד/ת:</span> ${escapeHtmlInline(input.employeeName)}</div>
+       <div><span class="dim">כמות:</span> ${input.quantity}</div>
+     </div>
+     ${input.extra ?? ""}`,
+  );
+}
+
+function approvalRejectFormPage(input: {
+  token: string;
+  itemName: string;
+  employeeName: string;
+  quantity: number;
+  justification: string | null;
+}): string {
+  const justBlock = input.justification
+    ? `<div class="meta"><span class="dim">נימוק העובד/ת:</span><br/>${escapeHtmlInline(input.justification)}</div>`
+    : "";
+  return htmlShell(
+    "דחיית בקשה",
+    `<h1 style="color:#ff7c5c;">דחיית בקשה</h1>
+     <p class="sub">סיבת הדחייה תיראה לעובד/ת ותתועד במערכת.</p>
+     <div class="meta">
+       <div><span class="dim">פריט:</span> <strong>${escapeHtmlInline(input.itemName)}</strong></div>
+       <div><span class="dim">עובד/ת:</span> ${escapeHtmlInline(input.employeeName)}</div>
+       <div><span class="dim">כמות:</span> ${input.quantity}</div>
+     </div>
+     ${justBlock}
+     <form method="POST" action="/api/approval/reject">
+       <input type="hidden" name="token" value="${escapeHtmlInline(input.token)}"/>
+       <textarea name="reason" placeholder="לדוגמה: כבר רכשנו פריט דומה לעובד/ת בחודש שעבר" required minlength="3" maxlength="500"></textarea>
+       <button type="submit" class="btn-reject">שליחת דחייה</button>
+     </form>`,
+  );
 }

@@ -3,6 +3,7 @@ import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
+import formbody from "@fastify/formbody";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { eventBus } from "./events.js";
@@ -35,6 +36,9 @@ export async function startServer(port = 3000) {
   await app.register(multipart, {
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB cap per quote file
   });
+  // Lets us read application/x-www-form-urlencoded bodies (used by the
+  // one-click reject form rendered for the email approval flow).
+  await app.register(formbody);
 
   // Global admin guard — only active when ADMIN_TOKEN is set in .env.
   // Protects every /api/* route EXCEPT /api/auth/* and /api/employee/* (which
@@ -46,6 +50,8 @@ export async function startServer(port = 3000) {
       if (url === "/api/health") return;
       if (url.startsWith("/api/auth/")) return;
       if (url.startsWith("/api/employee/")) return;
+      // Email-based one-click manager approvals: token-authenticated, no session.
+      if (url.startsWith("/api/approval/")) return;
       // Static-ish file under /api/equipment/quotes/ — also gated, since quotes can be sensitive
       return requireAdmin(req, reply);
     });
@@ -62,8 +68,10 @@ export async function startServer(port = 3000) {
   setInterval(() => {
     try {
       const r = cleanupExpiredAuth();
-      if (r.tokens || r.sessions) {
-        console.log(`[auth] cleaned ${r.tokens} tokens, ${r.sessions} sessions`);
+      if (r.tokens || r.sessions || r.approvals) {
+        console.log(
+          `[auth] cleaned ${r.tokens} tokens, ${r.sessions} sessions, ${r.approvals} approval-tokens`,
+        );
       }
     } catch (err) {
       console.error("[auth] cleanup failed:", err);

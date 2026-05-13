@@ -239,6 +239,25 @@ CREATE TABLE IF NOT EXISTS employee_sessions (
 CREATE INDEX IF NOT EXISTS idx_employee_sessions_token ON employee_sessions(token);
 CREATE INDEX IF NOT EXISTS idx_employee_sessions_employee ON employee_sessions(employee_id);
 
+-- v2.5: One-click approval tokens emailed to managers
+-- Two tokens per request (one for approve, one for reject) so each link
+-- in the email is action-specific and single-use.
+CREATE TABLE IF NOT EXISTS approval_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL UNIQUE,
+  request_id INTEGER NOT NULL REFERENCES equipment_requests(id) ON DELETE CASCADE,
+  manager_employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  action TEXT NOT NULL CHECK (action IN ('approve','reject')),
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  used_ip TEXT,
+  reason TEXT,                                  -- captured on reject
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_approval_tokens_token ON approval_tokens(token);
+CREATE INDEX IF NOT EXISTS idx_approval_tokens_request ON approval_tokens(request_id);
+
 -- v2.4: Web Push subscriptions (one device = one row)
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
