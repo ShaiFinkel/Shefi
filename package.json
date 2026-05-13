@@ -13,7 +13,8 @@
     "start:fast": "node dist/index.js",
     "frontend:dev": "cd frontend && npm run dev",
     "db:init": "tsc && node dist/db/init.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "qa:email-approval": "node scripts/qa-email-approval.mjs"
   },
   "engines": {
     "node": ">=20"
