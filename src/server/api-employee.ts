@@ -31,12 +31,20 @@ function getCookies(req: FastifyRequest): Record<string, string | undefined> {
   return cookie.parse(header);
 }
 
-function setSessionCookie(reply: FastifyReply, token: string): void {
-  // SameSite=Lax + HttpOnly + Secure-when-https. Path=/ so it's sent to /api/.
-  const isHttps = (env.APP_PUBLIC_URL ?? "").startsWith("https://");
+function isRequestSecure(req: FastifyRequest): boolean {
+  // Trust the actual scheme Fastify sees, plus the X-Forwarded-Proto header
+  // that Cloudflare Tunnel / nginx-style proxies set. Without this, cookies
+  // marked "secure" would never be sent back over a tunnel that terminates
+  // TLS at the edge.
+  if ((req.protocol ?? "").startsWith("https")) return true;
+  const xfp = req.headers["x-forwarded-proto"];
+  return typeof xfp === "string" && xfp.split(",")[0].trim() === "https";
+}
+
+function setSessionCookie(req: FastifyRequest, reply: FastifyReply, token: string): void {
   const value = cookie.serialize(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: isHttps,
+    secure: isRequestSecure(req),
     sameSite: "lax",
     path: "/",
     maxAge: Math.floor(SESSION_TTL_MS / 1000),
@@ -44,11 +52,10 @@ function setSessionCookie(reply: FastifyReply, token: string): void {
   reply.header("Set-Cookie", value);
 }
 
-function clearSessionCookie(reply: FastifyReply): void {
-  const isHttps = (env.APP_PUBLIC_URL ?? "").startsWith("https://");
+function clearSessionCookie(req: FastifyRequest, reply: FastifyReply): void {
   const value = cookie.serialize(SESSION_COOKIE_NAME, "", {
     httpOnly: true,
-    secure: isHttps,
+    secure: isRequestSecure(req),
     sameSite: "lax",
     path: "/",
     maxAge: 0,
@@ -106,10 +113,15 @@ export async function registerEmployeeRoutes(app: FastifyInstance): Promise<void
       email,
       ip: (req.ip ?? "").slice(0, 64),
     });
-    const link = `${env.APP_PUBLIC_URL.replace(/\/$/, "")}/me/verify?token=${encodeURIComponent(tok.token)}`;
+    const verifyPath = `/api/auth/verify?token=${encodeURIComponent(tok.token)}`;
+    // Absolute URL for the email (must work from anyone's inbox).
+    const linkAbsolute = `${env.APP_PUBLIC_URL.replace(/\/$/, "")}${verifyPath}`;
+    // Relative URL for the in-page dev fallback so it follows whatever host
+    // the developer is currently using (localhost / Tailscale / cloudflared).
+    const linkRelative = verifyPath;
     const tpl = magicLinkTemplate({
       employeeName: employee.name_he ?? employee.name,
-      link,
+      link: linkAbsolute,
       ttlMinutes: Math.round(MAGIC_LINK_TTL_MS / 60000),
     });
     const result = await sendEmail({ to: email, subject: tpl.subject, html: tpl.html, text: tpl.text });
@@ -118,7 +130,7 @@ export async function registerEmployeeRoutes(app: FastifyInstance): Promise<void
       ok: true,
       sent: result.ok,
       // expose link in dev mode (no Resend configured) so the developer can copy it
-      dev_link: env.RESEND_API_KEY ? undefined : link,
+      dev_link: env.RESEND_API_KEY ? undefined : linkRelative,
     };
   });
 
@@ -137,9 +149,11 @@ export async function registerEmployeeRoutes(app: FastifyInstance): Promise<void
       employee_id: used.employee_id,
       user_agent: (req.headers["user-agent"] ?? "").slice(0, 240),
     });
-    setSessionCookie(reply, session.token);
-    // Redirect into the app
-    return reply.redirect(`${env.APP_PUBLIC_URL.replace(/\/$/, "")}/me`);
+    setSessionCookie(req, reply, session.token);
+    // Relative redirect so the browser stays on whatever host it came from
+    // (localhost / Tailscale IP / cloudflared subdomain). Cookie was set on
+    // this same host, so this guarantees the next request carries it.
+    return reply.redirect("/me");
   });
 
   // Step 3: who am I? Used by the PWA on every load.
@@ -166,7 +180,7 @@ export async function registerEmployeeRoutes(app: FastifyInstance): Promise<void
     const cookies = getCookies(req);
     const token = cookies[SESSION_COOKIE_NAME];
     if (token) deleteSession(token);
-    clearSessionCookie(reply);
+    clearSessionCookie(req, reply);
     return { ok: true };
   });
 
