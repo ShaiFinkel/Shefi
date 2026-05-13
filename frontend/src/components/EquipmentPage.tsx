@@ -654,12 +654,23 @@ function NewRequestModal({
           className="bg-bg border border-panel2 rounded px-2 py-1 w-full"
         >
           <option value="">— בחר/י מהקטלוג —</option>
-          {catalog.map((c) => (
-            <option key={c.id} value={c.id}>
-              {CATEGORY_LABEL[c.category]} {c.name} {c.price ? `(${fmtMoney(c.price, c.currency)})` : ""}
-            </option>
-          ))}
-          <option value={-1}>📝 אחר (פריט מותאם)</option>
+          {(Object.keys(CATEGORY_LABEL) as EquipmentCategory[])
+            .map((cat) => {
+              const items = catalog.filter((c) => c.active && c.category === cat);
+              if (!items.length) return null;
+              return (
+                <optgroup key={cat} label={CATEGORY_LABEL[cat]}>
+                  {items.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                      {c.vendor ? ` · ${c.vendor}` : ""}
+                      {c.price ? ` · ${fmtMoney(c.price, c.currency)}` : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })}
+          <option value={-1}>📝 אחר (פריט מותאם — לא בקטלוג)</option>
         </select>
       </Field>
 
