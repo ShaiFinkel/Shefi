@@ -7,8 +7,10 @@ import {
   writeFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
+  statSync,
 } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import {
   abortBranch,
   commitOnBranch,
@@ -90,7 +92,8 @@ export const setDevTaskStatusTool = tool({
 
 export const startWorkTool = tool({
   name: "start_work",
-  description: "מתחיל לעבוד על dev_task — יוצר branch ומסמן in_progress.",
+  description:
+    "מתחיל לעבוד על dev_task — יוצר branch ומסמן in_progress. קרא לכלי זה **מיד** אחרי handoff מנועם, עם ה־id מהשורה DEV_TASK_ID: N.",
   parameters: z.object({
     dev_task_id: z.number().int(),
   }),
@@ -104,22 +107,192 @@ export const startWorkTool = tool({
   },
 });
 
+export const getDevTaskTool = tool({
+  name: "get_dev_task",
+  description:
+    "מחזיר title, spec, status ו-assignee של משימת פיתוח לפי id. השתמש אחרי start_work אם צריך לעיין שוב במפרט, או כשלא ברור איזו משימה לפתוח.",
+  parameters: z.object({
+    id: z.number().int(),
+  }),
+  execute: async ({ id }) => {
+    const t = getDevTask(id);
+    if (!t) return `dev_task #${id} לא נמצא`;
+    return JSON.stringify(
+      {
+        id: t.id,
+        title: t.title,
+        spec: t.spec,
+        status: t.status,
+        assignee: t.assignee,
+      },
+      null,
+      2,
+    );
+  },
+});
+
+// Soft cap for any single read response. Anything bigger is truncated and
+// the caller is told to re-read with a line range. Lower this number → fewer
+// tokens per file, but possibly more reads.
+const READ_CHAR_CAP = 6000;
+
+export function readFileSlice(input: {
+  path: string;
+  start_line: number | null;
+  end_line: number | null;
+}): string {
+  if (!isPathSafe(input.path)) return `שגיאה: גישה לנתיב אסורה (${input.path})`;
+  const abs = resolve(process.cwd(), input.path);
+  if (!existsSync(abs)) return `הקובץ לא קיים: ${input.path}`;
+  const lines = readFileSync(abs, "utf-8").split("\n");
+  const total = lines.length;
+  const from = Math.max(1, input.start_line ?? 1);
+  const to = Math.min(total, input.end_line ?? total);
+  if (from > to) return `שגיאה: טווח לא תקין (${from}-${to})`;
+  const slice = lines.slice(from - 1, to);
+  const numbered = slice.map((l, i) => `${String(from + i).padStart(5)}| ${l}`).join("\n");
+  if (numbered.length > READ_CHAR_CAP) {
+    const truncated = numbered.slice(0, READ_CHAR_CAP);
+    const lastNewline = truncated.lastIndexOf("\n");
+    return (
+      truncated.slice(0, lastNewline > 0 ? lastNewline : truncated.length) +
+      `\n... (קובץ באורך ${total} שורות. קראת ${from}-${to}, נקצץ באמצע. קרא שוב עם start_line/end_line צרים יותר.)`
+    );
+  }
+  return `// ${input.path} — שורות ${from}-${to} מתוך ${total}\n${numbered}`;
+}
+
 export const readFileTool = tool({
   name: "read_file",
-  description: "קורא קובץ מהרפו (path יחסי לתיקיית הפרויקט).",
+  description:
+    "קורא קובץ (או קטע ממנו). אם מציינים start_line/end_line — מחזיר רק את הטווח. אחרת מחזיר את כל הקובץ עד תקרה (~6KB) ואז מתבקש לקרוא שוב עם טווח. ההחזר תמיד מסומן בקידומת LINE| כדי לעזור לכוון.",
   parameters: z.object({
     path: z.string().describe("נתיב יחסי, למשל src/agents/shefi.ts"),
+    start_line: z
+      .number()
+      .int()
+      .nullable()
+      .describe("שורת התחלה (1-מבוסס). null = מתחילה."),
+    end_line: z
+      .number()
+      .int()
+      .nullable()
+      .describe("שורת סיום (כולל). null = עד הסוף."),
   }),
-  execute: async ({ path }) => {
-    if (!isPathSafe(path)) return `שגיאה: גישה לנתיב אסורה (${path})`;
-    const abs = resolve(process.cwd(), path);
-    if (!existsSync(abs)) return `הקובץ לא קיים: ${path}`;
-    const content = readFileSync(abs, "utf-8");
-    if (content.length > 12000) {
-      return content.slice(0, 12000) + "\n... (truncated)";
+  execute: async ({ path, start_line, end_line }) => readFileSlice({ path, start_line, end_line }),
+});
+
+// Node-based ripgrep alternative — no external dependency. Walks the repo
+// (skipping node_modules/dist/data/.git etc.), reads each text file, applies
+// the regex, and returns up to 30 path:line:content matches. The PM (Noam)
+// uses this to discover where things live before writing a spec; Daniel
+// uses it as a fallback when he needs a call site.
+const SKIP_DIRS = new Set([
+  "node_modules",
+  "dist",
+  "data",
+  ".git",
+  ".next",
+  "build",
+  "coverage",
+  ".cache",
+]);
+const TEXT_EXT = /\.(ts|tsx|js|jsx|mjs|cjs|json|md|html|css|scss|sql|sh|yml|yaml|toml|env\.example)$/i;
+
+export function* walkRepo(root: string, dir: string = root): Generator<string> {
+  for (const entry of readdirSync(dir)) {
+    if (entry.startsWith(".") && entry !== ".env.example") continue;
+    if (SKIP_DIRS.has(entry)) continue;
+    const abs = resolve(dir, entry);
+    let st;
+    try { st = statSync(abs); } catch { continue; }
+    if (st.isDirectory()) {
+      yield* walkRepo(root, abs);
+    } else if (st.isFile() && TEXT_EXT.test(entry)) {
+      if (st.size > 1_000_000) continue; // skip huge files
+      yield abs;
     }
-    return content;
-  },
+  }
+}
+
+export function globToRegex(glob: string): RegExp {
+  // Tiny glob → regex with the gitignore convention that `**/` may match
+  // zero directories, so `src/lib/**/*.ts` also matches `src/lib/email.ts`.
+  // We tokenize first to avoid regex meta-chars (?, ., *) from one stage
+  // colliding with another (e.g. a `?` produced by `(?:.../)?` getting
+  // re-interpreted as the glob `?`).
+  let out = "";
+  let i = 0;
+  while (i < glob.length) {
+    const c = glob[i];
+    if (c === "*" && glob[i + 1] === "*" && glob[i + 2] === "/") {
+      out += "(?:[^/]+/)*"; // zero-or-more path segments
+      i += 3;
+    } else if (c === "*" && glob[i + 1] === "*") {
+      out += ".*";
+      i += 2;
+    } else if (c === "*") {
+      out += "[^/]*";
+      i += 1;
+    } else if (c === "?") {
+      out += "[^/]";
+      i += 1;
+    } else if ("\\.+^${}()|[]".includes(c)) {
+      out += "\\" + c;
+      i += 1;
+    } else {
+      out += c;
+      i += 1;
+    }
+  }
+  return new RegExp("^" + out + "$");
+}
+
+export function grepRepo(input: { pattern: string; glob: string | null }): string {
+  if (!input.pattern.trim()) return "שגיאה: pattern ריק";
+  let regex: RegExp;
+  try { regex = new RegExp(input.pattern); }
+  catch (e) { return `שגיאה: regex לא תקין (${(e as Error).message})`; }
+  const root = process.cwd();
+  const globRe = input.glob ? globToRegex(input.glob) : null;
+  const matches: string[] = [];
+  for (const abs of walkRepo(root)) {
+    const rel = relative(root, abs);
+    if (globRe && !globRe.test(rel)) continue;
+    let content: string;
+    try { content = readFileSync(abs, "utf-8"); } catch { continue; }
+    const lines = content.split("\n");
+    let perFile = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (regex.test(lines[i])) {
+        if (perFile >= 8) break;
+        let snippet = lines[i].trim();
+        if (snippet.length > 200) snippet = snippet.slice(0, 200) + "…";
+        matches.push(`${rel}:${i + 1}: ${snippet}`);
+        perFile++;
+        if (matches.length >= 31) break;
+      }
+    }
+    if (matches.length >= 31) break;
+  }
+  if (matches.length === 0) return `אין התאמות ל־"${input.pattern}"${input.glob ? ` ב־${input.glob}` : ""}`;
+  const head = matches.slice(0, 30).join("\n");
+  const more = matches.length > 30 ? `\n... (יש עוד התאמות. צמצם תבנית pattern או glob.)` : "";
+  return head + more;
+}
+
+export const grepRepoTool = tool({
+  name: "grep_repo",
+  description:
+    "מחפש regex בכל קבצי הקוד של הרפו (מדלג על node_modules/dist/data/.git). מחזיר עד 30 התאמות בפורמט path:line:content. תמיד תשתמש בזה לפני שאתה קורא קבצים גדולים — קודם מצא איפה הסימן שאתה מחפש, ואז קרא רק את הטווח הזה ב־read_file.",
+  parameters: z.object({
+    pattern: z.string().describe("ביטוי רגולרי (JavaScript regex)."),
+    glob: z
+      .string()
+      .nullable()
+      .describe("תבנית glob יחסית, למשל 'src/**/*.ts' או '*.tsx'. null = כל הקוד."),
+  }),
+  execute: async ({ pattern, glob }) => grepRepo({ pattern, glob }),
 });
 
 export const writeFileTool = tool({

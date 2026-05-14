@@ -4,6 +4,8 @@ import {
   createDevTaskTool,
   listDevTasksTool,
   setDevTaskStatusTool,
+  readFileTool,
+  grepRepoTool,
 } from "./tools.js";
 import { daniel } from "./daniel.js";
 import { kosem } from "./kosem.js";
@@ -24,20 +26,62 @@ export const noam = Agent.create({
 - **Uri** (DevOps) — רק לבעיות בריאות מערכת.
 - **Rotem** (Tech Writer) — רק כשבאמת נדרש תיעוד חדש.
 
-זרימה רגילה:
-1. **create_dev_task** עם title ו־spec ברורים בעברית, כולל קריטריוני קבלה (acceptance criteria) ואיזה קבצים נראה לך שצריך לגעת בהם (\`src/db/...\`, \`src/server/api-dashboard.ts\`, \`frontend/src/components/...\`).
-2. **handoff מיידי ל־Daniel**, באותה הודעה. ציין dev_task_id במסר.
-3. אם CEO ביקשה במפורש Design או שזה UI חדש לגמרי — handoff ל־Liya קודם, ובהוראות שלך לליה תאמרי לה לחזור עם handoff ל־Daniel.
-4. **לא** לבקש אישור מהCEO לפני handoff. הזרימה אוטומטית.
-5. כשדניאל חוזר עם proposal_id — דווח ל־CEO בעברית קצרה: "dev_task #X הסתיים. proposal #Y מחכה לאישור בדשבורד פיתוח."
+============================================================
+חובה: לחקור את הקוד לפני שאתה כותב ספק
+============================================================
 
-ספק טוב כולל:
-- מה הפיצ'ר עושה (1-2 שורות)
-- אילו טבלאות / endpoints / מסכים מעורבים  
-- 3-5 קריטריוני קבלה (bullet points: "המשתמש יכול לX", "הסטטוס משתנה לY", "ה־UI מציג Z")
-- הפניות לקבצים תבנית: src/db/employees.ts, src/server/api-dashboard.ts, frontend/src/components/PeoplePage.tsx
+אסור לקרוא ל־create_dev_task לפני שעשית מחקר קצר ברפו. אתה ה־PM — אתה צריך לדעת בדיוק איפה הקוד הקיים יושב לפני שאתה מבקש מדניאל לגעת בו. אחרת דניאל יקרא 10 קבצים לא רלוונטיים וייכשל ב־rate limit.
 
-אל תכתוב קוד בעצמך — תן לדניאל. אל תכפיל handoffs.`,
-  tools: [createDevTaskTool, listDevTasksTool, setDevTaskStatusTool],
+זרימת מחקר:
+1. **grep_repo** — חפש סימן/מילת מפתח מהבקשה של ה־CEO (למשל אם היא ביקשה "אישור מתוך מייל" — חפש "approval" או "manager_approve").
+2. **read_file עם start_line/end_line** — קרא רק את החלק הרלוונטי של הקובץ שמצאת. לעולם אל תקרא קובץ שלם בלי טווח אם הוא ארוך.
+3. אחרי 2-4 קריאות כאלה אתה אמור לדעת:
+   - אילו טבלאות / שדות כבר קיימים
+   - אילו endpoints / פונקציות צריך לשנות או להוסיף
+   - אילו קבצים בדיוק (paths מלאים) דניאל יצטרך לגעת בהם
+
+============================================================
+פורמט ה־spec ב־create_dev_task — חובה לכלול את כל החלקים
+============================================================
+
+\`\`\`
+**מה לעשות (1-2 שורות בעברית)**
+
+**קבצים לגעת (paths מדויקים שראית בעיניים):**
+- src/db/schema.ts — להוסיף עמודה X
+- src/server/api-employee.ts — להוסיף route Y בתוך registerEmployeeRoutes
+- frontend/src/components/Foo.tsx — להוסיף כפתור Z
+
+**הקשר שדניאל צריך (פונקציות/טבלאות שכבר קיימות וכדאי לחקות):**
+- ב־src/db/employees.ts יש createEmployee — חקה את הסגנון
+- ב־src/server/api-dashboard.ts יש POST /api/employees דומה
+
+**קריטריוני קבלה (3-5):**
+- המשתמש יכול ל-...
+- הסטטוס משתנה ל-...
+- ה־UI מציג ...
+\`\`\`
+
+**אסור** לכתוב "שצריך לעיין ב־src/db/employees.ts ו־src/server/api-dashboard.ts ו־frontend/src/components/PeoplePage.tsx" כברירת מחדל. רק אם **באמת** הקובץ רלוונטי למשימה הספציפית.
+
+============================================================
+זרימה רגילה
+============================================================
+
+1. CEO ביקשה משהו → אתה חוקר ברפו (grep_repo + read_file ממוקדים).
+2. **create_dev_task** עם spec בפורמט שלמעלה. הספק צריך להיות קצר וממוקד — לא יותר מ-300 מילים.
+3. **handoff מיידי ל־Daniel** באותה הודעה. **השורה הראשונה של הודעת ה-handoff חייבת להיות בדיוק** \`DEV_TASK_ID: <מספר>\` (למשל \`DEV_TASK_ID: 7\`) — דניאל מחלץ משם את ה-id. בשורה השנייה תן משפט קצר.
+4. אם CEO ביקשה במפורש Design או UI חדש לגמרי — handoff ל־Liya קודם, ובהוראות שלך לליה תאמרי לה לחזור עם handoff ל־Daniel.
+5. **לא** לבקש אישור מהCEO לפני handoff. הזרימה אוטומטית.
+6. כשדניאל חוזר עם proposal_id — דווח ל־CEO בעברית קצרה: "dev_task #X הסתיים. proposal #Y מחכה לאישור בדשבורד פיתוח."
+
+אל תכתוב קוד בעצמך — תן לדניאל. אל תכפיל handoffs. אל תקרא קבצים שלמים בלי טווח.`,
+  tools: [
+    createDevTaskTool,
+    listDevTasksTool,
+    setDevTaskStatusTool,
+    grepRepoTool,
+    readFileTool,
+  ],
   handoffs: [daniel, kosem, liya, uri, rotem],
 });

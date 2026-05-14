@@ -14,7 +14,8 @@
     "frontend:dev": "cd frontend && npm run dev",
     "db:init": "tsc && node dist/db/init.js",
     "typecheck": "tsc --noEmit",
-    "qa:email-approval": "node scripts/qa-email-approval.mjs"
+    "qa:email-approval": "node scripts/qa-email-approval.mjs",
+    "qa:grep-tool": "node scripts/qa-grep-tool.mjs"
   },
   "engines": {
     "node": ">=20"
